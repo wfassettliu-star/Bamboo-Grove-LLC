@@ -863,8 +863,8 @@ function renderRentHist(){
 }
 
 // ── GRID ──────────────────────────────────────────────────
-function renderGrid(cid,pid,pays){
-  const months=getMonths(),tenants=getActiveTenants().filter(t=>t.propId===pid),cm=cmk();
+function renderGrid(pid,pays){
+  const months=getMonths(),tenants=getActiveTenants().filter(t=>t.propId==pid),cm=cmk();
   let h='<div class="tw"><table class="t"><thead><tr>';
   h+=`<th style="min-width:148px;position:sticky;left:0;z-index:2;background:#f5f8f5">Tenant</th><th class="c">Rent/Mo</th>`;
   months.forEach(m=>{h+=`<th class="mhd${m===cm?' cur':''}">${mLabel(m)}</th>`;});
@@ -873,7 +873,7 @@ function renderGrid(cid,pid,pays){
     h+=`<tr><td style="position:sticky;left:0;background:#fff;z-index:1"><div style="font-weight:600">${tn(t)}</div><div style="font-size:11px;color:var(--mut)">${t.roomId}</div></td><td class="c mono" style="color:var(--pm);font-weight:600">${f$(t.rent)}</td>`;
     months.forEach(m=>{const p=findP(pays,t.id,m),st=rentSt(p),cur=m===cm,fut=m>cm;
       const txt=fut?'–':p?(st==='paid'?'&#10003; Paid':st==='partial'?f$(parseFloat(p.amountPaid)||0):'Late'):'Unpaid';
-      h+=`<td class="mc${cur?' cur':''}"><span class="bdg ${fut?'future':st}" onclick="openRentModal(${pid},${t.id},'${m}')">${txt}</span></td>`;
+      h+=`<td class="mc${cur?' cur':''}"><span class="bdg ${fut?'future':st}" onclick="openRentModal(${pid},'${t.id}','${m}')">${txt}</span></td>`;
     });
     h+='</tr>';
   });
@@ -881,6 +881,138 @@ function renderGrid(cid,pid,pays){
   h+=`<tr class="tr-tot"><td style="position:sticky;left:0;background:#f5f8f5;z-index:1">Monthly Total</td><td class="c mono">${f$(tr)}</td>`;
   months.forEach(m=>{const col=tenants.reduce((s,t)=>{const p=findP(pays,t.id,m);return s+(p?parseFloat(p.amountPaid)||0:0);},0);h+=`<td class="mc${m===cm?' cur':''}" style="font-size:11px;color:${col>=tr?'#1b4332':col>0?'#92400e':'#9e9e9e'}">${col>0?f$(col):'—'}</td>`;});
   h+='</tr></tbody></table></div>';
+  return h;
+}
+function buildPropFinancials(pid,period){
+  const pays=loadR(),utils=loadU(),maints=loadM();
+  const cy=TODAY.getFullYear(),cm=TODAY.getMonth()+1;
+  const fin=PROPS_FIN[pid],pname=PROPS[pid].name;
+  const allTens=loadT().filter(t=>t.propId==pid);
+  const activeTens=allTens.filter(t=>t.leaseStatus==='Active');
+  const allTenIds=new Set(allTens.map(t=>String(t.id)));
+  let rD=pays.filter(r=>r.propertyId==pid||allTenIds.has(String(r.tenantId)));
+  let uD=utils.filter(u=>u.propertyId==pid);
+  let mD=maints.filter(m=>m.propertyId==pid);
+  let pLbl='All Time';
+  if(period==='mtd'){const mo=cmk();rD=rD.filter(r=>r.paymentMonth===mo);uD=uD.filter(u=>u.billMonth===mo);mD=mD.filter(m=>(m.activityDate||'').slice(0,7)===mo);pLbl=mLabel(mo);}
+  else if(period==='ytd'){const yp=cy+'-';rD=rD.filter(r=>r.paymentMonth&&r.paymentMonth.startsWith(yp));uD=uD.filter(u=>u.billMonth&&u.billMonth.startsWith(yp));mD=mD.filter(m=>(m.activityDate||'').startsWith(yp));pLbl='Jan – '+MOS[cm-1].slice(0,3)+' '+cy;}
+  else if(period==='ly'){const lyp=(cy-1)+'-';rD=rD.filter(r=>r.paymentMonth&&r.paymentMonth.startsWith(lyp));uD=uD.filter(u=>u.billMonth&&u.billMonth.startsWith(lyp));mD=mD.filter(m=>(m.activityDate||'').startsWith(lyp));pLbl='Full Year '+(cy-1);}
+  const grossRent=rD.reduce((s,r)=>s+(parseFloat(r.amountDue)||0),0);
+  const rentColl=rD.reduce((s,r)=>s+(parseFloat(r.amountPaid)||0),0);
+  const uncoll=grossRent-rentColl;
+  const lateFees=rD.reduce((s,r)=>s+(parseFloat(r.lateFeeCollected)||0),0);
+  const reimbColl=uD.reduce((s,u)=>s+(parseFloat(u.reimbCollected)||0),0);
+  const totalRev=rentColl+lateFees+reimbColl;
+  const utilAll=uD.filter(u=>u.isDeductible==='Yes').reduce((s,u)=>s+(parseFloat(u.billAmount)||0),0);
+  const utilTax=uD.filter(u=>u.utilityType==='Property Tax'||u.utilityType==='School Tax').reduce((s,u)=>s+(parseFloat(u.billAmount)||0),0);
+  const utilOp=utilAll-utilTax;
+  const netUtil=Math.max(0,utilOp-reimbColl);
+  const maintExp=mD.filter(m=>m.isDeductible==='Yes').reduce((s,m)=>s+(parseFloat(m.cost)||0),0);
+  const mileRate=(TAX_RULES&&TAX_RULES.mileageRate)||0.70;
+  const mileDeduct=mD.reduce((s,m)=>s+(parseFloat(m.milesDriven)||0)*mileRate,0);
+  const totalExp=netUtil+maintExp+mileDeduct+utilTax;
+  const noi=totalRev-totalExp;
+  const annDepr=fin.annualDepr;
+  let pd=0;
+  if(period==='mtd')pd=annDepr/12;
+  else if(period==='ytd')pd=annDepr*(cm-0.5)/12;
+  else if(period==='ly')pd=annDepr;
+  else pd=calcAccumDepr(fin.purchaseDate,annDepr);
+  const estTax=noi-pd;
+  const allPropPays=pays.filter(r=>r.propertyId==pid||allTenIds.has(String(r.tenantId)));
+  const allPropUtils=utils.filter(u=>u.propertyId==pid);
+  const rentRec=allPropPays.reduce((s,r)=>{const b=(parseFloat(r.amountDue)||0)-(parseFloat(r.amountPaid)||0);return s+(b>0?b:0);},0);
+  const utilRec=allPropUtils.reduce((s,u)=>{const b=(parseFloat(u.tenantReimb)||0)-(parseFloat(u.reimbCollected)||0);return s+(b>0?b:0);},0);
+  const currAssets=rentRec+utilRec;
+  const accumDepr=calcAccumDepr(fin.purchaseDate,annDepr);
+  const netBV=fin.purchasePrice-accumDepr;
+  const totalAssets=currAssets+netBV;
+  const unpaidBills=allPropUtils.filter(u=>!u.datePaid).reduce((s,u)=>s+(parseFloat(u.billAmount)||0),0);
+  const secDeps=activeTens.reduce((s,t)=>s+(parseFloat(t.rent)||0),0);
+  const totalLiab=unpaidBills+secDeps;
+  const netEquity=totalAssets-totalLiab;
+  const row=(lbl,val,cls='')=>`<div class="fs-row${cls?' '+cls:''}"><span>${lbl}</span><span class="fs-amt">${f$(val)}</span></div>`;
+  const rowP=(lbl,val,cls='',red=false)=>`<div class="fs-row${cls?' '+cls:''}"><span>${lbl}</span><span class="fs-amt"${red&&val>0?' style="color:var(--redt)"':''}>${val>0?'('+f$(val)+')':f$(val)}</span></div>`;
+  const sec=lbl=>`<div class="fs-sec">${lbl}</div>`;
+  let is=`<div class="fs-hdr"><h3>Income Statement</h3><span class="fs-per">${pLbl}</span></div>`;
+  is+=sec('Revenue');
+  is+=row('Gross Rent Charged',grossRent,'in1');
+  is+=rowP('Less: Uncollected / Vacancy',uncoll,'in1',true);
+  is+=row('Net Rent Collected',rentColl);
+  if(lateFees>0)is+=row('Late Fees Collected',lateFees,'in1');
+  is+=row('Utility Reimbursements',reimbColl,'in1');
+  is+=row('Total Revenue',totalRev,'tot');
+  is+=sec('Operating Expenses');
+  is+=row('Utilities (gross)',utilOp,'in1');
+  if(reimbColl>0)is+=rowP('Less: Tenant Reimbursements',reimbColl,'in1',true);
+  is+=row('Net Utilities',netUtil,'in1');
+  if(maintExp>0)is+=row('Maintenance &amp; Repairs',maintExp,'in1');
+  if(mileDeduct>0)is+=`<div class="fs-row in1"><span>Mileage Deduction ($${mileRate.toFixed(2)}/mi)</span><span class="fs-amt">${f$(mileDeduct)}</span></div>`;
+  if(utilTax>0)is+=row('Property &amp; School Tax',utilTax,'in1');
+  is+=row('Total Expenses',totalExp,'tot');
+  is+=`<div class="fs-row ${noi>=0?'grand':'loss'}"><span>Net Operating Income</span><span class="fs-amt">${f$(noi)}</span></div>`;
+  is+=sec('Depreciation (Non-Cash · IRS Pub. 527)');
+  is+=rowP(`${pname} — $${Math.round(annDepr).toLocaleString()}/yr`,pd,'in1',true);
+  is+=`<div class="fs-row ${estTax>=0?'grand':'loss'}"><span>Est. Taxable Income</span><span class="fs-amt">${f$(estTax)}</span></div>`;
+  is+=`<div class="fs-note">27.5-yr straight-line, mid-month convention (IRS Pub. 527). Estimate only.</div>`;
+  const purchYear=fin.purchaseDate.slice(0,4);
+  const mo3=MOS[cm-1].slice(0,3);
+  let bs=`<div class="fs-hdr"><h3>Balance Sheet</h3><span class="fs-per">As of ${mo3} ${TODAY.getDate()}, ${cy}</span></div>`;
+  bs+=sec('Current Assets');
+  bs+=row('Rent Receivable (outstanding)',rentRec,'in1');
+  bs+=row('Utility Reimb. Receivable',utilRec,'in1');
+  bs+=row('Total Current Assets',currAssets,'tot');
+  bs+=sec('Fixed Asset (Net Book Value)');
+  bs+=`<div class="fs-row in2"><span>Cost Basis (${purchYear})</span><span class="fs-amt">${f$(fin.purchasePrice)}</span></div>`;
+  bs+=`<div class="fs-row in2"><span>Accum. Depreciation</span><span class="fs-amt" style="color:var(--redt)">(${f$(accumDepr)})</span></div>`;
+  bs+=`<div class="fs-row in1" style="font-weight:700"><span>Net Book Value</span><span class="fs-amt">${f$(netBV)}</span></div>`;
+  bs+=`<div class="fs-row grand"><span>TOTAL ASSETS</span><span class="fs-amt">${f$(totalAssets)}</span></div>`;
+  bs+=sec('Current Liabilities');
+  bs+=row('Utility Bills Payable (unpaid)',unpaidBills,'in1');
+  bs+=row('Security Deposits Held',secDeps,'in1');
+  bs+=row('Total Liabilities',totalLiab,'tot');
+  bs+=`<div class="fs-row ${netEquity>=0?'grand':'loss'}"><span>NET EQUITY</span><span class="fs-amt">${f$(netEquity)}</span></div>`;
+  bs+=`<div class="fs-note">Security deposits = 1× monthly rent per active tenant. Value at historical cost (IRS rules).</div>`;
+  return{isHTML:is,bsHTML:bs};
+}
+function renderPropTab(cid,pid){
+  const pays=loadR(),utils=loadU(),maint=loadM(),cm=cmk();
+  const tenants=getActiveTenants().filter(t=>t.propId==pid);
+  const monthDue=tenants.reduce((s,t)=>s+t.rent,0);
+  const monthPaid=tenants.reduce((s,t)=>{const p=findP(pays,t.id,cm);return s+(p?parseFloat(p.amountPaid)||0:0);},0);
+  const propUtils=utils.filter(u=>u.propertyId==pid);
+  const curUtils=propUtils.filter(u=>u.billMonth===cm);
+  const utilTot=curUtils.reduce((s,u)=>s+(parseFloat(u.billAmount)||0),0);
+  const propMaint=maint.filter(m=>m.propertyId==pid);
+  const maintTot=propMaint.reduce((s,m)=>s+(parseFloat(m.cost)||0),0);
+  const period=PROP_PERIOD[pid]||'ytd';
+  const fin=buildPropFinancials(pid,period);
+  let h=`<div class="sc-row">
+    <div class="sc" style="border-left-color:#40916c"><div class="lbl">Rent — ${mLabel(cm)}</div><div class="val">${f$(monthPaid)} <span style="font-size:.75rem;color:var(--mut)">/ ${f$(monthDue)}</span></div><div class="sub">${tenants.filter(t=>{const p=findP(pays,t.id,cm);return p&&parseFloat(p.amountPaid)>0;}).length}/${tenants.length} tenants paid</div></div>
+    <div class="sc" style="border-left-color:#e9962a"><div class="lbl">Utilities — ${mLabel(cm)}</div><div class="val">${f$(utilTot)}</div><div class="sub">${curUtils.length} bill${curUtils.length!==1?'s':''} · ${curUtils.filter(u=>u.datePaid).length} paid</div></div>
+    <div class="sc" style="border-left-color:#8b5cf6"><div class="lbl">Maintenance (All Time)</div><div class="val">${f$(maintTot)}</div><div class="sub">${propMaint.length} activit${propMaint.length!==1?'ies':'y'}</div></div>
+    <div class="sc"><div class="lbl">Active Tenants</div><div class="val">${tenants.length}</div><div class="sub">${PROPS[pid].addr}</div></div>
+  </div>`;
+  h+=`<div class="dash-section"><h3>Rent Payments — ${mLabel(cm)} <button class="btn-add btn-sm" onclick="openRentModal(${pid},null,null)" style="font-size:11px">+ Record Payment</button></h3>${renderGrid(pid,pays)}</div>`;
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:22px">`;
+  h+=`<div class="dash-section"><h3>Active Tenants</h3><div class="tw"><table class="t"><thead><tr><th>Tenant</th><th>Room</th><th class="c">Rent/Mo</th><th>Lease End</th></tr></thead><tbody>`;
+  tenants.forEach(t=>{h+=`<tr><td style="font-weight:600">${tn(t)}</td><td style="font-size:12px">${t.roomId}</td><td class="c mono">${f$(t.rent)}</td><td style="font-size:12px">${t.leaseEnd?fd(t.leaseEnd):'—'}</td></tr>`;});
+  if(!tenants.length)h+=`<tr><td colspan="4"><div class="empty">No active tenants</div></td></tr>`;
+  h+=`</tbody></table></div></div>`;
+  const recentUtils=propUtils.slice().sort((a,b)=>b.billMonth.localeCompare(a.billMonth)).slice(0,6);
+  h+=`<div class="dash-section"><h3>Recent Bills <button class="btn-add btn-sm" onclick="openUtilModal(null)" style="font-size:11px">+ Add Bill</button></h3><div class="tw"><table class="t"><thead><tr><th>Month</th><th>Type</th><th class="c">Amount</th><th class="c">Status</th></tr></thead><tbody>`;
+  recentUtils.forEach(u=>{const st=utilSt(u);h+=`<tr><td style="font-size:12px">${mLabel(u.billMonth)}</td><td style="font-size:12px">${u.utilityType||'—'}</td><td class="c mono">${f$(u.billAmount)}</td><td class="c">${bdg(st,st.charAt(0).toUpperCase()+st.slice(1))}</td></tr>`;});
+  if(!recentUtils.length)h+=`<tr><td colspan="4"><div class="empty">No utility records</div></td></tr>`;
+  h+=`</tbody></table></div></div></div>`;
+  const recentMaint=propMaint.slice().sort((a,b)=>(b.activityDate||'').localeCompare(a.activityDate||'')).slice(0,5);
+  h+=`<div class="dash-section"><h3>Recent Maintenance <button class="btn-add btn-sm" onclick="openMaintModal(null)" style="font-size:11px">+ Log Activity</button></h3><div class="tw"><table class="t"><thead><tr><th>Date</th><th>Type</th><th style="min-width:160px">Description</th><th>By</th><th class="c">Cost</th></tr></thead><tbody>`;
+  recentMaint.forEach(m=>{h+=`<tr><td style="font-size:12px">${fd(m.activityDate)}</td><td style="font-size:12px">${m.activityType||'—'}</td><td style="font-size:12px;white-space:normal">${m.description||'—'}</td><td style="font-size:12px">${m.performedBy||'—'}</td><td class="c mono">${(parseFloat(m.cost)||0)>0?f$(m.cost):'—'}</td></tr>`;});
+  if(!recentMaint.length)h+=`<tr><td colspan="5"><div class="empty">No maintenance records</div></td></tr>`;
+  h+=`</tbody></table></div></div>`;
+  h+=`<div style="margin-bottom:10px;margin-top:22px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)">Financials</div>`;
+  h+=`<div class="pbar">`;
+  ['mtd','ytd','ly','all'].forEach((p,i)=>{const labels=['This Month','Year to Date','Last Year','All Time'];h+=`<button class="pbtn ppbtn-${pid}${period===p?' act':''}" onclick="setPropP(${pid},'${p}',this)">${labels[i]}</button>`;});
+  h+=`</div><div class="fs-wrap"><div class="fs-card">${fin.isHTML}</div><div class="fs-card">${fin.bsHTML}</div></div>`;
   document.getElementById(cid).innerHTML=h;
 }
 
@@ -1164,8 +1296,8 @@ function sw(btn){
   const tab=btn.dataset.tab;
   document.getElementById('tab-'+tab).classList.add('active');
   const pays=loadR();
-  if(tab==='brown')renderGrid('brown-grid',1001,pays);
-  if(tab==='white')renderGrid('white-grid',1002,pays);
+  if(tab==='brown')renderPropTab('brown-grid',1001);
+  if(tab==='white')renderPropTab('white-grid',1002);
   if(tab==='rent')renderRentHist();
   if(tab==='util'){renderUtilStats();renderUtil();}
   if(tab==='maint'){renderMaintStats();renderMaint();}
@@ -1369,12 +1501,19 @@ function readFileAsBase64(file){
 
 // ── AT A GLANCE ───────────────────────────────────────────
 let GL_PERIOD='ytd';
+const PROP_PERIOD={1001:'ytd',1002:'ytd'};
 
 function setGlP(p,btn){
   GL_PERIOD=p;
   document.querySelectorAll('.pbtn').forEach(b=>b.classList.remove('act'));
   btn.classList.add('act');
   renderGlance();
+}
+function setPropP(pid,p,btn){
+  PROP_PERIOD[pid]=p;
+  document.querySelectorAll('.ppbtn-'+pid).forEach(b=>b.classList.remove('act'));
+  btn.classList.add('act');
+  renderPropTab(pid===1001?'brown-grid':'white-grid',pid);
 }
 
 function calcAccumDepr(pd,rate){
@@ -1540,8 +1679,8 @@ function renderAll(){
   renderDash();
   const at=document.querySelector('.nav button.active')?.dataset?.tab;
   const pays=loadR();
-  if(at==='brown')renderGrid('brown-grid',1001,pays);
-  if(at==='white')renderGrid('white-grid',1002,pays);
+  if(at==='brown')renderPropTab('brown-grid',1001);
+  if(at==='white')renderPropTab('white-grid',1002);
   if(at==='rent')renderRentHist();
   if(at==='util'){renderUtilStats();renderUtil();}
   if(at==='maint'){renderMaintStats();renderMaint();}

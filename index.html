@@ -40,7 +40,8 @@
   --gold:#b5883b;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:14px;}
+html{overflow-x:hidden;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:14px;overflow-x:hidden;}
 .hdr{background:var(--pd);color:#fff;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border-bottom:3px solid var(--gold);}
 .hdr h1{font-family:Georgia,'Times New Roman',serif;font-size:1.05rem;font-weight:normal;letter-spacing:.02em;}
 .hdr-zh{font-family:Georgia,'Times New Roman',serif;font-size:13px;color:rgba(255,255,255,.30);letter-spacing:.08em;}
@@ -197,9 +198,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div style="font-size:11px;color:var(--mut)">Your husband pastes the same URL on his device — you'll both see the same data.</div>
     <div style="margin-top:14px;padding:10px 14px;background:#fef3c7;border-radius:6px;font-size:12px;color:#92400e;line-height:1.6">
       <strong>Using iPhone or iPad?</strong> Safari blocks network requests from locally opened files.
-      Host this file online first: go to <strong>app.netlify.com/drop</strong> on your computer,
-      drag this HTML file onto the page, and use the URL Netlify gives you instead of the downloaded file.
-      That URL works on any browser, any device, with no login required.
+      Open the app from your <strong>GitHub Pages URL</strong> instead of the downloaded file —
+      go to your GitHub repository, enable Pages (Settings → Pages → Branch: main), and use the
+      <strong>https://username.github.io/repo-name/</strong> URL on any browser, any device.
     </div>
   </div>
 </div>
@@ -478,7 +479,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         <div class="fg"><label>Reimb. Collected ($)</label><input type="number" id="uf-rc" step="0.01" min="0" value="0" oninput="calcUtilFlds()"></div>
         <div class="fg ro"><label>Reimb. Balance (auto)</label><input type="number" id="uf-rb" readonly></div></div>
       <div class="fr"><div class="fg ro"><label>Cost Per Tenant (auto)</label><input type="number" id="uf-cpt" readonly></div>
-        <div class="fg"><label>Tax Deductible?</label><select id="uf-ded"><option value="Yes">Yes</option><option value="No">No</option></select>
+        <div class="fg ro"><label>Tax Deductible? (auto)</label><input type="text" id="uf-ded" readonly>
           <div id="uf-ded-basis" style="font-size:10px;color:var(--mut);margin-top:3px;line-height:1.4"></div></div></div>
       <div class="fr s1"><div class="fg"><label>Notes</label><textarea id="uf-notes" rows="2"></textarea></div></div>
     </div>
@@ -511,7 +512,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="fr"><div class="fg"><label>Payment Method</label><select id="mf-meth"><option value="">N/A</option><option>Cash</option><option>Check</option><option>Credit Card</option><option>Zelle</option></select></div>
         <div class="fg"><label>Receipt On File?</label><select id="mf-rec"><option value="No">No</option><option value="Yes">Yes</option></select></div></div>
       <div class="fr"><div class="fg"><label>Receipt Number</label><input type="text" id="mf-recno"></div>
-        <div class="fg"><label>Tax Deductible?</label><select id="mf-ded"><option value="Yes">Yes</option><option value="No">No</option></select>
+        <div class="fg ro"><label>Tax Deductible? (auto)</label><input type="text" id="mf-ded" readonly>
           <div id="mf-ded-basis" style="font-size:10px;color:var(--mut);margin-top:3px;line-height:1.4"></div></div></div>
       <div class="fr s1"><div class="fg"><label>Upload Receipt to Google Drive (optional)</label>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -730,15 +731,21 @@ function renderDash(){
   const active=getActiveTenants();
   active.forEach(t=>{tDue+=t.rent;const p=findP(pays,t.id,mo);if(p){tPaid+=parseFloat(p.amountPaid)||0;if(daysLateCalc(p.paymentMonth,p.datePaid)>5)tLate++;}});
   const paidFull=pays.filter(p=>p.paymentMonth===mo&&(parseFloat(p.amountPaid)||0)>=(parseFloat(p.amountDue)||0)).length;
+  const sharedUtils=utils.filter(u=>u.billMonth===mo&&u.isShared==='Yes');
+  const sharedBillTotal=sharedUtils.reduce((s,u)=>s+(parseFloat(u.tenantReimb)||0),0);
+  const sharedBillCollected=sharedUtils.reduce((s,u)=>s+(parseFloat(u.reimbCollected)||0),0);
+  const totalExpected=tDue+sharedBillTotal;
+  const totalCollected=tPaid+sharedBillCollected;
+  const totalOutstanding=totalExpected-totalCollected;
   const curUtils=utils.filter(u=>u.billMonth===mo);
   const uTotal=curUtils.reduce((s,u)=>s+(parseFloat(u.billAmount)||0),0);
   const uPaid=curUtils.filter(u=>u.datePaid).reduce((s,u)=>s+(parseFloat(u.billAmount)||0),0);
   const mCost=maints.reduce((s,m)=>s+(parseFloat(m.cost)||0),0);
   const mHrs=maints.reduce((s,m)=>s+(parseFloat(m.hoursSpent)||0),0);
   document.getElementById('dash-stats').innerHTML=`
-    <div class="sc link" style="border-left-color:#40916c" onclick="goTab('rent')"><div class="lbl">Rent Expected</div><div class="val">${f$(tDue)}</div><div class="sub">${active.length} active tenants · ${mLabel(mo)}</div></div>
-    <div class="sc link" style="border-left-color:#52b788" onclick="goTab('rent')"><div class="lbl">Rent Collected</div><div class="val">${f$(tPaid)}</div><div class="sub">${paidFull}/${active.length} paid in full</div></div>
-    <div class="sc link" style="border-left-color:${(tDue-tPaid)>0?'#e9962a':'#40916c'}" onclick="goTab('rent')"><div class="lbl">Rent Outstanding</div><div class="val" style="color:${(tDue-tPaid)>0?'#c62828':'#40916c'}">${f$(tDue-tPaid)}</div><div class="sub">${tLate} late payer${tLate!==1?'s':''}</div></div>
+    <div class="sc link" style="border-left-color:#40916c" onclick="goTab('rent')"><div class="lbl">Rent Expected</div><div class="val">${f$(totalExpected)}</div><div class="sub">${f$(tDue)} rent${sharedBillTotal>0?' + '+f$(sharedBillTotal)+' shared bills':''} · ${active.length} tenants</div></div>
+    <div class="sc link" style="border-left-color:#52b788" onclick="goTab('rent')"><div class="lbl">Rent Collected</div><div class="val">${f$(totalCollected)}</div><div class="sub">${paidFull}/${active.length} paid in full${sharedBillCollected>0?' · '+f$(sharedBillCollected)+' bill reimb.':''}</div></div>
+    <div class="sc link" style="border-left-color:${totalOutstanding>0?'#e9962a':'#40916c'}" onclick="goTab('rent')"><div class="lbl">Rent Outstanding</div><div class="val" style="color:${totalOutstanding>0?'#c62828':'#40916c'}">${f$(totalOutstanding)}</div><div class="sub">${tLate} late payer${tLate!==1?'s':''}</div></div>
     <div class="sc link" style="border-left-color:#3b82f6" onclick="goTab('util')"><div class="lbl">Bills</div><div class="val">${f$(uTotal)}</div><div class="sub">${curUtils.length} bills · ${f$(uPaid)} paid</div></div>
     <div class="sc link" style="border-left-color:#8b5cf6" onclick="goTab('maint')"><div class="lbl">Maintenance Cost</div><div class="val">${f$(mCost)}</div><div class="sub">All time · ${maints.length} activities</div></div>
     <div class="sc link" onclick="goTab('maint')"><div class="lbl">Owner Hours</div><div class="val">${mHrs.toFixed(1)}</div><div class="sub">All time (tax documentation)</div></div>`;
@@ -753,6 +760,32 @@ function renderDash(){
       <td style="font-size:12px">${p?.paymentMethod||'—'}</td>
       <td><button class="btn btn-s btn-sm" onclick="openRentModal(${t.propId},${t.id},'${mo}')">${p?'Edit':'+ Add'}</button></td></tr>`;
   });
+  if(sharedUtils.length>0){
+    rh+=`<tr style="background:#eff6ff!important"><td colspan="10" style="padding:6px 13px;border-top:2px solid #bfdbfe"><strong style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#1e40af">Shared Utility Bills — Included in Expected</strong></td></tr>`;
+    sharedUtils.forEach(u=>{
+      const rb=(parseFloat(u.tenantReimb)||0)-(parseFloat(u.reimbCollected)||0);
+      const cpt=parseFloat(u.costPerTenant)||0;
+      rh+=`<tr style="background:#eff6ff!important">
+        <td style="font-size:12px;color:#1e40af;font-style:italic">${u.utilityType||'Bill'}</td>
+        <td>${ptag(u.propertyId)}</td>
+        <td style="font-size:12px;color:var(--mut)">${u.numSharing||0} sharing</td>
+        <td class="c mono" style="color:#1e40af">${cpt>0?f$(cpt)+'/ea':'—'}</td>
+        <td class="c mono" style="color:#1b4332">${(parseFloat(u.reimbCollected)||0)>0?f$(u.reimbCollected):'—'}</td>
+        <td class="c mono" style="color:${rb>0?'#c62828':'#40916c'}">${rb>0?f$(rb):'—'}</td>
+        <td class="c">${bdg(rb>0?'unpaid':'paid',rb>0?'Owed':'Settled')}</td>
+        <td style="font-size:12px">${u.dueDate?fd(u.dueDate):'—'}</td>
+        <td style="font-size:12px">—</td>
+        <td><button class="btn btn-s btn-sm" onclick="goTab('util')">View</button></td>
+      </tr>`;
+    });
+    rh+=`<tr class="tr-tot" style="background:#dbeafe!important;border-top:2px solid #93c5fd">
+      <td colspan="3"><strong>Grand Total — Rent + Shared Bills</strong></td>
+      <td class="c mono">${f$(totalExpected)}</td>
+      <td class="c mono" style="color:#1b4332">${f$(totalCollected)}</td>
+      <td class="c mono" style="color:${totalOutstanding>0?'#c62828':'#40916c'}">${f$(totalOutstanding)}</td>
+      <td colspan="4"></td>
+    </tr>`;
+  }
   document.getElementById('dash-rent-tbody').innerHTML=rh;
   let uh='';
   utils.filter(u=>u.billMonth===mo).sort((a,b)=>a.propertyId-b.propertyId).slice(0,8).forEach(u=>{const st=utilSt(u);uh+=`<tr><td>${ptag(u.propertyId)}</td><td>${u.utilityType||'—'}</td><td class="c mono">${f$(u.billAmount)}</td><td style="font-size:12px">${fd(u.dueDate)}</td><td class="c">${bdg(st,st.charAt(0).toUpperCase()+st.slice(1))}</td></tr>`;});
@@ -838,7 +871,7 @@ function renderUtil(){
       <td style="font-size:12px">${u.receiptFileUrl?`<a href="${u.receiptFileUrl}" target="_blank" style="color:var(--pm)">View</a>${u.receiptNumber?' ('+u.receiptNumber+')':''}`:u.receiptNumber||'—'}</td>
       <td style="font-size:12px;max-width:130px;white-space:normal">${u.notes||''}</td>
       <td class="c">${bdg(st,st.charAt(0).toUpperCase()+st.slice(1))}</td>
-      <td><button class="btn btn-s btn-sm" onclick="openUtilModal('${u.id}')">Edit</button></td></tr>`;
+      <td style="white-space:nowrap"><button class="btn btn-s btn-sm" onclick="openUtilModal('${u.id}')">Edit</button> <button class="btn btn-s btn-sm" onclick="copyUtil('${u.id}')">Copy</button></td></tr>`;
   });
   document.getElementById('util-tbody').innerHTML=h;
 }
@@ -879,7 +912,7 @@ function renderMaint(){
       <td style="font-size:12px">${m.scheduleECategory||'—'}</td>
       <td class="c">${bdg(m.recurringActivity==='Yes'?'yes':'no',m.recurringActivity||'No')}</td>
       <td style="font-size:12px">${m.recurringFrequency||'—'}</td>
-      <td><button class="btn btn-s btn-sm" onclick="openMaintModal('${m.id}')">Edit</button></td></tr>`;
+      <td style="white-space:nowrap"><button class="btn btn-s btn-sm" onclick="openMaintModal('${m.id}')">Edit</button> <button class="btn btn-s btn-sm" onclick="copyMaint('${m.id}')">Copy</button></td></tr>`;
   });
   document.getElementById('maint-tbody').innerHTML=h;
 }
@@ -996,6 +1029,45 @@ function saveUtil(){
 }
 function deleteUtil(){const id=document.getElementById('uf-id').value;if(!id)return;if(!confirm('Delete this utility record?'))return;saveU(loadU().filter(u=>u.id!==id));closeUtilModal();renderAll();toast('Deleted');}
 
+function copyUtil(id){
+  const u=loadU().find(u=>u.id===id);if(!u)return;
+  openUtilModal(null);
+  document.getElementById('uf-prop').value=u.propertyId||'';
+  document.getElementById('uf-type').value=u.utilityType||'';
+  document.getElementById('uf-prov').value=u.provider||'';
+  document.getElementById('uf-acct').value=u.accountNumber||'';
+  document.getElementById('uf-meth').value=u.paymentMethod||'';
+  document.getElementById('uf-pbo').value=u.paidByOwner||'Yes';
+  document.getElementById('uf-shared').value=u.isShared||'No';
+  document.getElementById('uf-ns').value=u.numSharing||0;
+  document.getElementById('uf-ded').value=u.isDeductible||'Yes';
+  document.getElementById('uf-notes').value=u.notes||'';
+  onUtilTypeChange();calcUtilFlds();
+  document.getElementById('u-mtitle').textContent='Copy Utility Bill';
+}
+
+function copyMaint(id){
+  const m=loadM().find(m=>m.id===id);if(!m)return;
+  openMaintModal(null);
+  document.getElementById('mf-prop').value=m.propertyId||'';
+  document.getElementById('mf-type').value=m.activityType||'';
+  document.getElementById('mf-cat').value=m.activityCategory||'';
+  document.getElementById('mf-desc').value=m.description||'';
+  document.getElementById('mf-area').value=m.roomOrArea||'';
+  document.getElementById('mf-by').value=m.performedBy||'';
+  document.getElementById('mf-contr').value=m.contractorName||'';
+  document.getElementById('mf-hrs').value=m.hoursSpent||0;
+  document.getElementById('mf-mi').value=m.milesDriven||0;
+  document.getElementById('mf-meth').value=m.paymentMethod||'';
+  document.getElementById('mf-ded').value=m.isDeductible||'Yes';
+  document.getElementById('mf-sche').value=m.scheduleECategory||'';
+  document.getElementById('mf-recur').value=m.recurringActivity||'No';
+  document.getElementById('mf-freq').value=m.recurringFrequency||'Weekly';
+  document.getElementById('mf-notes').value=m.notes||'';
+  toggleContr();toggleFreq();onMaintTypeChange();
+  document.getElementById('m-mtitle').textContent='Copy Activity';
+}
+
 // ── MAINT MODAL ───────────────────────────────────────────
 function openMaintModal(id){clrMaint();document.getElementById('mf-id').value='';document.getElementById('m-del-btn').style.display='none';document.getElementById('m-mtitle').textContent='Log Maintenance Activity';document.getElementById('mf-dt').value=TODAY.toISOString().slice(0,10);if(id){const m=loadM().find(m=>m.id===id);if(!m)return;document.getElementById('mf-id').value=m.id;document.getElementById('m-del-btn').style.display='block';document.getElementById('m-mtitle').textContent='Edit Activity';document.getElementById('mf-prop').value=m.propertyId||'';document.getElementById('mf-dt').value=m.activityDate||'';document.getElementById('mf-type').value=m.activityType||'';document.getElementById('mf-cat').value=m.activityCategory||'';document.getElementById('mf-desc').value=m.description||'';document.getElementById('mf-area').value=m.roomOrArea||'';document.getElementById('mf-by').value=m.performedBy||'';document.getElementById('mf-contr').value=m.contractorName||'';document.getElementById('mf-hrs').value=m.hoursSpent||0;document.getElementById('mf-mi').value=m.milesDriven||0;document.getElementById('mf-cost').value=m.cost||0;document.getElementById('mf-meth').value=m.paymentMethod||'';document.getElementById('mf-rec').value=m.receiptOnFile||'No';document.getElementById('mf-recno').value=m.receiptNumber||'';document.getElementById('mf-ded').value=m.isDeductible||'Yes';document.getElementById('mf-sche').value=m.scheduleECategory||'';document.getElementById('mf-recur').value=m.recurringActivity||'No';document.getElementById('mf-freq').value=m.recurringFrequency||'Weekly';document.getElementById('mf-notes').value=m.notes||'';document.getElementById('mf-file-url').value=m.receiptFileUrl||'';if(m.receiptFileUrl){document.getElementById('mf-file-status').innerHTML='<span style="color:var(--pm)">✓ <a href="'+m.receiptFileUrl+'" target="_blank" style="color:var(--pm)">View existing receipt</a></span>';}toggleContr();toggleFreq();onMaintTypeChange();}document.getElementById('maint-ov').classList.add('open');}
 function clrMaint(){['mf-prop','mf-type','mf-cat','mf-desc','mf-area','mf-by','mf-contr','mf-meth','mf-recno','mf-sche','mf-notes'].forEach(i=>document.getElementById(i).value='');document.getElementById('mf-hrs').value=0;document.getElementById('mf-mi').value=0;document.getElementById('mf-cost').value=0;document.getElementById('mf-rec').value='No';document.getElementById('mf-ded').value='Yes';document.getElementById('mf-recur').value='No';document.getElementById('mf-freq').value='Weekly';document.getElementById('mf-file').value='';document.getElementById('mf-file-url').value='';document.getElementById('mf-file-status').textContent='';toggleContr();toggleFreq();}
@@ -1024,6 +1096,7 @@ function goTab(tab){const btn=document.querySelector(`.nav button[data-tab="${ta
 function sw(btn){
   document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.tp').forEach(p=>p.classList.remove('active'));
+  window.scrollTo(0,0);
   btn.classList.add('active');
   const tab=btn.dataset.tab;
   document.getElementById('tab-'+tab).classList.add('active');
@@ -1190,17 +1263,32 @@ async function uploadReceipt(prefix){
   if(!API_URL){alert('Not connected to Google Sheet — open Settings to add URL.');return;}
   const file=fileInput.files[0];
   if(file.size>10*1024*1024){alert('File too large — maximum 10 MB.');return;}
-  statusEl.textContent='Uploading…';statusEl.style.color='var(--mut)';
+  const isUtil=prefix==='uf';
+  statusEl.textContent=isUtil?'Uploading & reading bill…':'Uploading…';
+  statusEl.style.color='var(--mut)';
   try{
     const base64Data=await readFileAsBase64(file);
     const fileName=buildReceiptFileName(prefix,file);
-    const res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({type:'receipt',fileName,mimeType:file.type,base64Data})});
+    const res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({type:'receipt',fileName,mimeType:file.type,base64Data,parseReceipt:isUtil})});
     const data=await res.json();
     if(data.error)throw new Error(data.error);
     urlEl.value=data.fileUrl;
     const recEl=document.getElementById(prefix+'-rec');
     if(recEl)recEl.value='Yes';
-    statusEl.innerHTML='<span style="color:var(--pm)">✓ Uploaded: <a href="'+data.fileUrl+'" target="_blank" style="color:var(--pm)">'+data.fileName+'</a></span>';
+    let filledCount=0;
+    if(isUtil&&data.parsed){
+      const p=data.parsed;
+      if(p.billMonth){document.getElementById('uf-mo').value=p.billMonth;filledCount++;}
+      if(p.utilityType){document.getElementById('uf-type').value=p.utilityType;filledCount++;}
+      if(p.provider){document.getElementById('uf-prov').value=p.provider;filledCount++;}
+      if(p.accountNumber){document.getElementById('uf-acct').value=p.accountNumber;filledCount++;}
+      if(p.billAmount){document.getElementById('uf-amt').value=p.billAmount;filledCount++;}
+      if(p.dueDate){document.getElementById('uf-due').value=p.dueDate;filledCount++;}
+      if(p.utilityType)onUtilTypeChange();
+      calcUtilFlds();
+    }
+    const fillNote=filledCount>0?` — ${filledCount} field${filledCount!==1?'s':''} auto-filled`:'';
+    statusEl.innerHTML='<span style="color:var(--pm)">✓ Uploaded'+fillNote+': <a href="'+data.fileUrl+'" target="_blank" style="color:var(--pm)">'+data.fileName+'</a></span>';
   }catch(e){
     statusEl.textContent='Upload failed: '+e.message;
     statusEl.style.color='var(--redt)';

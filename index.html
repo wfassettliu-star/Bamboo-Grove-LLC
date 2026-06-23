@@ -167,6 +167,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   .wrap{padding:14px;}.hdr,.nav{padding-left:14px;padding-right:14px;}
 }
 @media(prefers-reduced-motion:reduce){#splash,.sp-center,.sp-hint{transition:none;}}
+/* ── Management at a Glance ─────────────────────── */
+.fs-wrap{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;}
+.fs-card{background:var(--card);border:1px solid var(--bdr);border-radius:8px;overflow:hidden;}
+.fs-hdr{background:var(--pd);color:#fff;padding:12px 18px;display:flex;justify-content:space-between;align-items:center;}
+.fs-hdr h3{font-size:.9rem;font-weight:700;margin:0;}
+.fs-per{font-size:11px;opacity:.8;}
+.fs-sec{padding:5px 18px;background:#f5f8f5;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);border-top:1px solid var(--bdr);}
+.fs-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 18px;font-size:13px;}
+.fs-row.in1{padding-left:30px;font-size:12px;}
+.fs-row.in2{padding-left:44px;font-size:11px;color:var(--mut);}
+.fs-row.tot{font-weight:700;border-top:1px solid var(--bdr);padding-top:7px;padding-bottom:7px;}
+.fs-row.grand{background:var(--grn);color:var(--grnt);font-weight:700;font-size:14px;padding:10px 18px;}
+.fs-row.loss{background:var(--red);color:var(--redt);font-weight:700;font-size:14px;padding:10px 18px;}
+.fs-amt{font-family:'Courier New',monospace;}
+.fs-note{padding:8px 18px 10px;font-size:10px;color:var(--mut);line-height:1.5;border-top:1px solid var(--bdr);}
+.pbtn{padding:5px 16px;border-radius:20px;border:1.5px solid var(--bdr);background:var(--card);font-size:12px;font-weight:600;cursor:pointer;color:var(--mut);transition:all .12s;}
+.pbtn.act{background:var(--pd);color:#fff;border-color:var(--pd);}
+.pbar{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap;}
+@media(max-width:860px){.fs-wrap{grid-template-columns:1fr;}}
 </style>
 
 <!-- LOADING SCREEN -->
@@ -244,6 +263,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <button data-tab="maint" onclick="sw(this)">Maintenance</button>
   <div class="nav-sep"></div>
   <button data-tab="tenants" onclick="sw(this)">Tenants</button>
+  <div class="nav-sep"></div>
+  <button data-tab="glance" onclick="sw(this)">At a Glance</button>
 </div>
 
 <div class="wrap">
@@ -377,6 +398,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </tr></thead>
     <tbody id="tenant-tbody"></tbody>
   </table></div>
+</div>
+
+<!-- AT A GLANCE TAB -->
+<div class="tp" id="tab-glance">
+  <div class="sc-row" id="gl-kpi"></div>
+  <div class="pbar">
+    <button class="pbtn" onclick="setGlP('mtd',this)">This Month</button>
+    <button class="pbtn act" onclick="setGlP('ytd',this)">Year to Date</button>
+    <button class="pbtn" onclick="setGlP('ly',this)">Last Year</button>
+    <button class="pbtn" onclick="setGlP('all',this)">All Time</button>
+  </div>
+  <div class="fs-wrap">
+    <div id="gl-is" class="fs-card"></div>
+    <div id="gl-bs" class="fs-card"></div>
+  </div>
 </div>
 
 </div><!-- /wrap -->
@@ -564,6 +600,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <script>
 // ── STATIC DATA ───────────────────────────────────────────
 const PROPS={0:{name:'Both Properties',tag:'g',addr:''},1001:{name:'Brown House',tag:'b',addr:'404 Murray Hill Rd, Vestal NY'},1002:{name:'White House',tag:'w',addr:'4508 Oxford Pl, Vestal NY'}};
+const PROPS_FIN={
+  1001:{purchasePrice:235000,purchaseDate:'2022-09-07',landValue:47000,depreciableBase:188000,annualDepr:6836.36},
+  1002:{purchasePrice:305000,purchaseDate:'2023-08-31',landValue:61000,depreciableBase:244000,annualDepr:8872.73}
+};
 
 // Default tenant list — matches tblTenants in Access (all active + inactive for history lookups)
 const DEFAULT_TENANTS=[
@@ -1130,6 +1170,7 @@ function sw(btn){
   if(tab==='util'){renderUtilStats();renderUtil();}
   if(tab==='maint'){renderMaintStats();renderMaint();}
   if(tab==='tenants')renderTenants();
+  if(tab==='glance')renderGlance();
 }
 
 // ── TOAST ─────────────────────────────────────────────────
@@ -1326,6 +1367,172 @@ function readFileAsBase64(file){
   });
 }
 
+// ── AT A GLANCE ───────────────────────────────────────────
+let GL_PERIOD='ytd';
+
+function setGlP(p,btn){
+  GL_PERIOD=p;
+  document.querySelectorAll('.pbtn').forEach(b=>b.classList.remove('act'));
+  btn.classList.add('act');
+  renderGlance();
+}
+
+function calcAccumDepr(pd,rate){
+  const d=new Date(pd+'T00:00:00');
+  const sy=d.getFullYear(),sm=d.getMonth()+1;
+  const cy=TODAY.getFullYear(),cm=TODAY.getMonth()+1;
+  let t=0;
+  for(let y=sy;y<=cy;y++){
+    if(y===sy&&y===cy){t+=rate*Math.max(0,cm-sm+0.5)/12;}
+    else if(y===sy){t+=rate*(12.5-sm)/12;}
+    else if(y===cy){t+=rate*(cm-0.5)/12;}
+    else t+=rate;
+  }
+  return Math.max(0,t);
+}
+
+function renderGlance(){
+  const pays=loadR(),utils=loadU(),maints=loadM();
+  const tenants=loadT().filter(t=>t.leaseStatus==='Active');
+  const cy=TODAY.getFullYear(),cm=TODAY.getMonth()+1;
+  const p=GL_PERIOD;
+
+  // Filter records by selected period
+  let rD=pays,uD=utils,mD=maints,pLbl='All Time';
+  if(p==='mtd'){
+    const mo=cmk();
+    rD=pays.filter(r=>r.paymentMonth===mo);
+    uD=utils.filter(u=>u.billMonth===mo);
+    mD=maints.filter(m=>(m.activityDate||'').slice(0,7)===mo);
+    pLbl=mLabel(mo);
+  }else if(p==='ytd'){
+    const yp=cy+'-';
+    rD=pays.filter(r=>r.paymentMonth&&r.paymentMonth.startsWith(yp));
+    uD=utils.filter(u=>u.billMonth&&u.billMonth.startsWith(yp));
+    mD=maints.filter(m=>(m.activityDate||'').startsWith(yp));
+    pLbl='Jan – '+MOS[cm-1].slice(0,3)+' '+cy;
+  }else if(p==='ly'){
+    const lyp=(cy-1)+'-';
+    rD=pays.filter(r=>r.paymentMonth&&r.paymentMonth.startsWith(lyp));
+    uD=utils.filter(u=>u.billMonth&&u.billMonth.startsWith(lyp));
+    mD=maints.filter(m=>(m.activityDate||'').startsWith(lyp));
+    pLbl='Full Year '+(cy-1);
+  }
+
+  // ── Income Statement figures ───────────────────────────
+  const grossRent=rD.reduce((s,r)=>s+(parseFloat(r.amountDue)||0),0);
+  const rentColl=rD.reduce((s,r)=>s+(parseFloat(r.amountPaid)||0),0);
+  const uncoll=grossRent-rentColl;
+  const lateFees=rD.reduce((s,r)=>s+(parseFloat(r.lateFeeCollected)||0),0);
+  const reimbColl=uD.reduce((s,u)=>s+(parseFloat(u.reimbCollected)||0),0);
+  const totalRev=rentColl+lateFees+reimbColl;
+
+  const utilAll=uD.filter(u=>u.isDeductible==='Yes').reduce((s,u)=>s+(parseFloat(u.billAmount)||0),0);
+  const utilTax=uD.filter(u=>u.utilityType==='Property Tax'||u.utilityType==='School Tax').reduce((s,u)=>s+(parseFloat(u.billAmount)||0),0);
+  const utilOp=utilAll-utilTax;
+  const netUtil=Math.max(0,utilOp-reimbColl);
+  const maintExp=mD.filter(m=>m.isDeductible==='Yes').reduce((s,m)=>s+(parseFloat(m.cost)||0),0);
+  const mileRate=(TAX_RULES&&TAX_RULES.mileageRate)||0.70;
+  const mileDeduct=mD.reduce((s,m)=>s+(parseFloat(m.milesDriven)||0)*mileRate,0);
+  const totalExp=netUtil+maintExp+mileDeduct+utilTax;
+  const noi=totalRev-totalExp;
+
+  // Depreciation (IRS Pub.527 — 27.5yr residential, mid-month convention)
+  const dB=PROPS_FIN[1001].annualDepr,dW=PROPS_FIN[1002].annualDepr;
+  let pdB=0,pdW=0;
+  if(p==='mtd'){pdB=dB/12;pdW=dW/12;}
+  else if(p==='ytd'){pdB=dB*(cm-0.5)/12;pdW=dW*(cm-0.5)/12;}
+  else if(p==='ly'){pdB=dB;pdW=dW;}
+  else{pdB=calcAccumDepr(PROPS_FIN[1001].purchaseDate,dB);pdW=calcAccumDepr(PROPS_FIN[1002].purchaseDate,dW);}
+  const totalDepr=pdB+pdW;
+  const estTax=noi-totalDepr;
+
+  // ── Balance Sheet figures (always as of today) ─────────
+  const rentRec=pays.reduce((s,r)=>{const b=(parseFloat(r.amountDue)||0)-(parseFloat(r.amountPaid)||0);return s+(b>0?b:0);},0);
+  const utilRec=utils.reduce((s,u)=>{const b=(parseFloat(u.tenantReimb)||0)-(parseFloat(u.reimbCollected)||0);return s+(b>0?b:0);},0);
+  const currAssets=rentRec+utilRec;
+  const bAcc=calcAccumDepr(PROPS_FIN[1001].purchaseDate,dB);
+  const wAcc=calcAccumDepr(PROPS_FIN[1002].purchaseDate,dW);
+  const bNet=PROPS_FIN[1001].purchasePrice-bAcc;
+  const wNet=PROPS_FIN[1002].purchasePrice-wAcc;
+  const fixedAssets=bNet+wNet;
+  const totalAssets=currAssets+fixedAssets;
+  const unpaidBills=utils.filter(u=>!u.datePaid).reduce((s,u)=>s+(parseFloat(u.billAmount)||0),0);
+  const secDeps=tenants.reduce((s,t)=>s+(parseFloat(t.rent)||0),0);
+  const totalLiab=unpaidBills+secDeps;
+  const netEquity=totalAssets-totalLiab;
+
+  // ── KPI bar ───────────────────────────────────────────
+  const annRent=tenants.reduce((s,t)=>s+(parseFloat(t.rent)||0),0)*12;
+  const portCost=PROPS_FIN[1001].purchasePrice+PROPS_FIN[1002].purchasePrice;
+  const grossYield=portCost>0?(annRent/portCost*100):0;
+  document.getElementById('gl-kpi').innerHTML=`
+    <div class="sc" style="border-left-color:#40916c"><div class="lbl">Portfolio Cost Basis</div><div class="val">${f$(portCost)}</div><div class="sub">2 properties &middot; Vestal, NY</div></div>
+    <div class="sc" style="border-left-color:#52b788"><div class="lbl">Net Book Value</div><div class="val">${f$(fixedAssets)}</div><div class="sub">After ${f$(bAcc+wAcc)} depreciation</div></div>
+    <div class="sc" style="border-left-color:#3b82f6"><div class="lbl">Annual Rent Capacity</div><div class="val">${f$(annRent)}</div><div class="sub">${tenants.length} tenants &middot; ${grossYield.toFixed(1)}% gross yield</div></div>
+    <div class="sc" style="border-left-color:${noi>=0?'#40916c':'#dc2626'}"><div class="lbl">NOI &mdash; ${pLbl}</div><div class="val" style="color:${noi>=0?'var(--pd)':'#dc2626'}">${f$(noi)}</div><div class="sub">Revenue less operating expenses</div></div>
+    <div class="sc" style="border-left-color:#7c3aed"><div class="lbl">Est. Taxable &mdash; ${pLbl}</div><div class="val" style="color:${estTax>=0?'#5b21b6':'#dc2626'}">${f$(estTax)}</div><div class="sub">After ${f$(totalDepr)} depreciation</div></div>
+    <div class="sc" style="border-left-color:#f59e0b"><div class="lbl">Net Equity</div><div class="val">${f$(netEquity)}</div><div class="sub">Total assets less liabilities</div></div>
+  `;
+
+  // ── Row helpers ───────────────────────────────────────
+  const row=(lbl,val,cls='')=>`<div class="fs-row${cls?' '+cls:''}"><span>${lbl}</span><span class="fs-amt">${f$(val)}</span></div>`;
+  const rowP=(lbl,val,cls='',red=false)=>`<div class="fs-row${cls?' '+cls:''}"><span>${lbl}</span><span class="fs-amt"${red&&val>0?' style="color:var(--redt)"':''}>${val>0?'('+f$(val)+')':f$(val)}</span></div>`;
+  const sec=lbl=>`<div class="fs-sec">${lbl}</div>`;
+
+  // ── Income Statement ──────────────────────────────────
+  let is=`<div class="fs-hdr"><h3>Income Statement</h3><span class="fs-per">${pLbl}</span></div>`;
+  is+=sec('Revenue');
+  is+=row('Gross Rent Charged',grossRent,'in1');
+  is+=rowP('Less: Uncollected / Vacancy',uncoll,'in1',true);
+  is+=row('Net Rent Collected',rentColl);
+  if(lateFees>0)is+=row('Late Fees Collected',lateFees,'in1');
+  is+=row('Utility Reimbursements',reimbColl,'in1');
+  is+=row('Total Revenue',totalRev,'tot');
+  is+=sec('Operating Expenses');
+  is+=row('Utilities (gross)',utilOp,'in1');
+  if(reimbColl>0)is+=rowP('Less: Tenant Reimbursements',reimbColl,'in1',true);
+  is+=row('Net Utilities',netUtil,'in1');
+  if(maintExp>0)is+=row('Maintenance &amp; Repairs',maintExp,'in1');
+  if(mileDeduct>0)is+=`<div class="fs-row in1"><span>Mileage Deduction ($${mileRate.toFixed(2)}/mi)</span><span class="fs-amt">${f$(mileDeduct)}</span></div>`;
+  if(utilTax>0)is+=row('Property &amp; School Tax',utilTax,'in1');
+  is+=row('Total Expenses',totalExp,'tot');
+  is+=`<div class="fs-row ${noi>=0?'grand':'loss'}"><span>Net Operating Income</span><span class="fs-amt">${f$(noi)}</span></div>`;
+  is+=sec('Depreciation (Non-Cash · IRS Pub. 527)');
+  is+=rowP('Brown House &mdash; $6,836/yr',pdB,'in1',true);
+  is+=rowP('White House &mdash; $8,873/yr',pdW,'in1',true);
+  is+=rowP('Total Depreciation',totalDepr,'tot',true);
+  is+=`<div class="fs-row ${estTax>=0?'grand':'loss'}"><span>Est. Taxable Income</span><span class="fs-amt">${f$(estTax)}</span></div>`;
+  is+=`<div class="fs-note">Depreciation: 27.5-yr straight-line, mid-month convention per IRS Pub. 527. Estimate only &mdash; consult your tax preparer.</div>`;
+  document.getElementById('gl-is').innerHTML=is;
+
+  // ── Balance Sheet ─────────────────────────────────────
+  const mo3=MOS[cm-1].slice(0,3);
+  let bs=`<div class="fs-hdr"><h3>Balance Sheet</h3><span class="fs-per">As of ${mo3} ${TODAY.getDate()}, ${cy}</span></div>`;
+  bs+=sec('Current Assets');
+  bs+=row('Rent Receivable (outstanding)',rentRec,'in1');
+  bs+=row('Utility Reimb. Receivable',utilRec,'in1');
+  bs+=row('Total Current Assets',currAssets,'tot');
+  bs+=sec('Fixed Assets (Net Book Value)');
+  bs+=`<div class="fs-row in1"><span style="font-weight:700">Brown House</span><span></span></div>`;
+  bs+=`<div class="fs-row in2"><span>Cost Basis (Sep 2022)</span><span class="fs-amt">${f$(PROPS_FIN[1001].purchasePrice)}</span></div>`;
+  bs+=`<div class="fs-row in2"><span>Accum. Depreciation</span><span class="fs-amt" style="color:var(--redt)">(${f$(bAcc)})</span></div>`;
+  bs+=`<div class="fs-row in2" style="font-weight:700"><span>Net Book Value</span><span class="fs-amt">${f$(bNet)}</span></div>`;
+  bs+=`<div class="fs-row in1" style="margin-top:4px"><span style="font-weight:700">White House</span><span></span></div>`;
+  bs+=`<div class="fs-row in2"><span>Cost Basis (Aug 2023)</span><span class="fs-amt">${f$(PROPS_FIN[1002].purchasePrice)}</span></div>`;
+  bs+=`<div class="fs-row in2"><span>Accum. Depreciation</span><span class="fs-amt" style="color:var(--redt)">(${f$(wAcc)})</span></div>`;
+  bs+=`<div class="fs-row in2" style="font-weight:700"><span>Net Book Value</span><span class="fs-amt">${f$(wNet)}</span></div>`;
+  bs+=row('Total Fixed Assets',fixedAssets,'tot');
+  bs+=`<div class="fs-row grand"><span>TOTAL ASSETS</span><span class="fs-amt">${f$(totalAssets)}</span></div>`;
+  bs+=sec('Current Liabilities');
+  bs+=row('Utility Bills Payable (unpaid)',unpaidBills,'in1');
+  bs+=row('Security Deposits Held',secDeps,'in1');
+  bs+=row('Total Liabilities',totalLiab,'tot');
+  bs+=`<div class="fs-row ${netEquity>=0?'grand':'loss'}"><span>NET EQUITY</span><span class="fs-amt">${f$(netEquity)}</span></div>`;
+  bs+=`<div class="fs-note">Security deposits = 1&times; monthly rent per active tenant. Property values at historical cost per IRS rules.</div>`;
+  document.getElementById('gl-bs').innerHTML=bs;
+}
+
 // ── RENDER ALL ────────────────────────────────────────────
 document.getElementById('hdr-dt').textContent=`${MOS[TODAY.getMonth()]} ${TODAY.getDate()}, ${TODAY.getFullYear()}`;
 function renderAll(){
@@ -1339,6 +1546,7 @@ function renderAll(){
   if(at==='util'){renderUtilStats();renderUtil();}
   if(at==='maint'){renderMaintStats();renderMaint();}
   if(at==='tenants')renderTenants();
+  if(at==='glance')renderGlance();
 }
 
 // ── INIT ──────────────────────────────────────────────────

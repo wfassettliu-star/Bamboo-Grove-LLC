@@ -507,7 +507,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="fr" id="contr-row" style="display:none"><div class="fg"><label>Contractor Name</label><input type="text" id="mf-contr"></div><div class="fg"></div></div>
       <div class="fdiv">Time &amp; Cost</div>
       <div class="fr s3"><div class="fg"><label>Hours Spent</label><input type="number" id="mf-hrs" step="0.5" min="0" value="0"></div>
-        <div class="fg"><label>Miles Driven</label><input type="number" id="mf-mi" step="0.1" min="0" value="0"></div>
+        <div class="fg"><label>Miles Driven</label><input type="number" id="mf-mi" step="0.1" min="0" value="0" oninput="calcMileage()">
+          <div id="mf-mi-val" style="font-size:10px;color:var(--mut);margin-top:3px;line-height:1.4"></div></div>
         <div class="fg"><label>Cost ($)</label><input type="number" id="mf-cost" step="0.01" min="0" value="0" oninput="onMaintCostChange()"></div></div>
       <div class="fr"><div class="fg"><label>Payment Method</label><select id="mf-meth"><option value="">N/A</option><option>Cash</option><option>Check</option><option>Credit Card</option><option>Zelle</option></select></div>
         <div class="fg"><label>Receipt On File?</label><select id="mf-rec"><option value="No">No</option><option value="Yes">Yes</option></select></div></div>
@@ -625,6 +626,10 @@ async function fetchAll(){
     _data.maint   = Array.isArray(m)?m:[];
     _data.tenants = Array.isArray(t)&&t.length?t:DEFAULT_TENANTS;
     if(tx&&tx.maintenance){ TAX_RULES=tx; } else { push('taxrules',DEFAULT_TAX_RULES); }
+    // If stored mileage rate is from a prior year, silently fetch the current IRS rate
+    if(!TAX_RULES.mileageYear || TAX_RULES.mileageYear < TODAY.getFullYear()){
+      fetch(API_URL+'?type=mileagerate').then(r=>r.json()).then(d=>{if(d.rate){TAX_RULES.mileageRate=d.rate;TAX_RULES.mileageYear=d.year;}}).catch(()=>{});
+    }
   }catch(e){clearTimeout(timer);throw e;}
 }
 
@@ -949,6 +954,9 @@ const QUARTERLY_TYPES=['Water & Sewer','Trash'],TAX_TYPES=['Property Tax','Schoo
 const DEFAULT_TAX_RULES = {
   lastUpdated: '2025-01-01',
   source: 'IRS Publication 527 (2025 ed.); TD 9636 (26 CFR 1.263(a)-3)',
+  mileageRate: 0.70,
+  mileageYear: 2025,
+  mileageBasis: 'IRS Rev. Proc. 2024-25 — standard mileage rate for rental property management travel; deductible on Schedule E (line 6) or Form 4562.',
   utilityDefault:  {ded:'Yes', basis:'IRS Pub. 527 — utilities paid by landlord are deductible operating expenses (Schedule E, line 19)'},
   utilityOverride: {
     'Property Tax': {ded:'Yes', basis:'IRS Pub. 527 — real estate taxes deductible on Schedule E (line 16)'},
@@ -1017,6 +1025,21 @@ function evalMaintOtherDeductible(){
   }
 }
 
+function calcMileage(){
+  const mi=parseFloat(document.getElementById('mf-mi').value)||0;
+  const rate=(TAX_RULES&&TAX_RULES.mileageRate)||0.70;
+  const yr=(TAX_RULES&&TAX_RULES.mileageYear)||2025;
+  const el=document.getElementById('mf-mi-val');
+  if(!el)return;
+  if(mi>0){
+    const val=(mi*rate).toFixed(2);
+    const basis=(TAX_RULES&&TAX_RULES.mileageBasis)||'IRS standard mileage rate';
+    el.innerHTML=`= <strong style="color:var(--pd)">$${val}</strong> tax deduction &nbsp;·&nbsp; IRS ${yr} rate: $${rate.toFixed(2)}/mi<br><span style="font-size:9px">${basis}</span>`;
+  }else{
+    el.textContent='';
+  }
+}
+
 function calcUtilFlds(){const a=parseFloat(document.getElementById('uf-amt').value)||0,r=parseFloat(document.getElementById('uf-reimb').value)||0,c=parseFloat(document.getElementById('uf-rc').value)||0,n=parseInt(document.getElementById('uf-ns').value)||0;document.getElementById('uf-rb').value=(r-c).toFixed(2);document.getElementById('uf-cpt').value=n>0?(a/n).toFixed(2):'';}
 function saveUtil(){
   const pid=document.getElementById('uf-prop').value,mo=document.getElementById('uf-mo').value,ut=document.getElementById('uf-type').value;
@@ -1064,12 +1087,12 @@ function copyMaint(id){
   document.getElementById('mf-recur').value=m.recurringActivity||'No';
   document.getElementById('mf-freq').value=m.recurringFrequency||'Weekly';
   document.getElementById('mf-notes').value=m.notes||'';
-  toggleContr();toggleFreq();onMaintTypeChange();
+  toggleContr();toggleFreq();onMaintTypeChange();calcMileage();
   document.getElementById('m-mtitle').textContent='Copy Activity';
 }
 
 // ── MAINT MODAL ───────────────────────────────────────────
-function openMaintModal(id){clrMaint();document.getElementById('mf-id').value='';document.getElementById('m-del-btn').style.display='none';document.getElementById('m-mtitle').textContent='Log Maintenance Activity';document.getElementById('mf-dt').value=TODAY.toISOString().slice(0,10);if(id){const m=loadM().find(m=>m.id===id);if(!m)return;document.getElementById('mf-id').value=m.id;document.getElementById('m-del-btn').style.display='block';document.getElementById('m-mtitle').textContent='Edit Activity';document.getElementById('mf-prop').value=m.propertyId||'';document.getElementById('mf-dt').value=m.activityDate||'';document.getElementById('mf-type').value=m.activityType||'';document.getElementById('mf-cat').value=m.activityCategory||'';document.getElementById('mf-desc').value=m.description||'';document.getElementById('mf-area').value=m.roomOrArea||'';document.getElementById('mf-by').value=m.performedBy||'';document.getElementById('mf-contr').value=m.contractorName||'';document.getElementById('mf-hrs').value=m.hoursSpent||0;document.getElementById('mf-mi').value=m.milesDriven||0;document.getElementById('mf-cost').value=m.cost||0;document.getElementById('mf-meth').value=m.paymentMethod||'';document.getElementById('mf-rec').value=m.receiptOnFile||'No';document.getElementById('mf-recno').value=m.receiptNumber||'';document.getElementById('mf-ded').value=m.isDeductible||'Yes';document.getElementById('mf-sche').value=m.scheduleECategory||'';document.getElementById('mf-recur').value=m.recurringActivity||'No';document.getElementById('mf-freq').value=m.recurringFrequency||'Weekly';document.getElementById('mf-notes').value=m.notes||'';document.getElementById('mf-file-url').value=m.receiptFileUrl||'';if(m.receiptFileUrl){document.getElementById('mf-file-status').innerHTML='<span style="color:var(--pm)">✓ <a href="'+m.receiptFileUrl+'" target="_blank" style="color:var(--pm)">View existing receipt</a></span>';}toggleContr();toggleFreq();onMaintTypeChange();}document.getElementById('maint-ov').classList.add('open');}
+function openMaintModal(id){clrMaint();document.getElementById('mf-id').value='';document.getElementById('m-del-btn').style.display='none';document.getElementById('m-mtitle').textContent='Log Maintenance Activity';document.getElementById('mf-dt').value=TODAY.toISOString().slice(0,10);if(id){const m=loadM().find(m=>m.id===id);if(!m)return;document.getElementById('mf-id').value=m.id;document.getElementById('m-del-btn').style.display='block';document.getElementById('m-mtitle').textContent='Edit Activity';document.getElementById('mf-prop').value=m.propertyId||'';document.getElementById('mf-dt').value=m.activityDate||'';document.getElementById('mf-type').value=m.activityType||'';document.getElementById('mf-cat').value=m.activityCategory||'';document.getElementById('mf-desc').value=m.description||'';document.getElementById('mf-area').value=m.roomOrArea||'';document.getElementById('mf-by').value=m.performedBy||'';document.getElementById('mf-contr').value=m.contractorName||'';document.getElementById('mf-hrs').value=m.hoursSpent||0;document.getElementById('mf-mi').value=m.milesDriven||0;document.getElementById('mf-cost').value=m.cost||0;document.getElementById('mf-meth').value=m.paymentMethod||'';document.getElementById('mf-rec').value=m.receiptOnFile||'No';document.getElementById('mf-recno').value=m.receiptNumber||'';document.getElementById('mf-ded').value=m.isDeductible||'Yes';document.getElementById('mf-sche').value=m.scheduleECategory||'';document.getElementById('mf-recur').value=m.recurringActivity||'No';document.getElementById('mf-freq').value=m.recurringFrequency||'Weekly';document.getElementById('mf-notes').value=m.notes||'';document.getElementById('mf-file-url').value=m.receiptFileUrl||'';if(m.receiptFileUrl){document.getElementById('mf-file-status').innerHTML='<span style="color:var(--pm)">✓ <a href="'+m.receiptFileUrl+'" target="_blank" style="color:var(--pm)">View existing receipt</a></span>';}toggleContr();toggleFreq();onMaintTypeChange();calcMileage();}document.getElementById('maint-ov').classList.add('open');}
 function clrMaint(){['mf-prop','mf-type','mf-cat','mf-desc','mf-area','mf-by','mf-contr','mf-meth','mf-recno','mf-sche','mf-notes'].forEach(i=>document.getElementById(i).value='');document.getElementById('mf-hrs').value=0;document.getElementById('mf-mi').value=0;document.getElementById('mf-cost').value=0;document.getElementById('mf-rec').value='No';document.getElementById('mf-ded').value='Yes';document.getElementById('mf-recur').value='No';document.getElementById('mf-freq').value='Weekly';document.getElementById('mf-file').value='';document.getElementById('mf-file-url').value='';document.getElementById('mf-file-status').textContent='';toggleContr();toggleFreq();}
 function closeMaintModal(){document.getElementById('maint-ov').classList.remove('open');}
 function toggleContr(){document.getElementById('contr-row').style.display=document.getElementById('mf-by').value==='Contractor'?'grid':'none';}
